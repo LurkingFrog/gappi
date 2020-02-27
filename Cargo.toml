@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "drive_fs",
+    "sheets_db",
+]
