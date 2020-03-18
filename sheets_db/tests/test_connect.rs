@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::info;
 
 #[test]
 fn test_connection() {
@@ -15,7 +15,7 @@ fn test_connection() {
     sheets_db::SheetDB::open(service_account, sheet_id).expect("Error opening the worksheet");
 
   let sheets = worksheet.list_sheets();
-  debug!("Listed Sheets:\n{:#?}", sheets);
+  info!("Listed Sheets:\n{:#?}", sheets);
 
   // Define sheets api call
 

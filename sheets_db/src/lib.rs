@@ -198,9 +198,9 @@ pub struct SpreadsheetProperties {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GridProperties {
   #[serde(rename = "rowCount")]
-  row_count: i32,
+  pub row_count: i32,
   #[serde(rename = "columnCount")]
-  column_count: i32,
+  pub column_count: i32,
   #[serde(default, rename = "frozenRowCount")]
   frozen_row_count: i32,
   #[serde(default, rename = "frozenColumnCount")]
@@ -232,7 +232,7 @@ pub struct SheetProperties {
   #[serde(rename = "sheetType")]
   sheet_type: SheetType,
   #[serde(rename = "gridProperties")]
-  grid_properties: GridProperties,
+  pub grid_properties: GridProperties,
   #[serde(default = "bool_false")]
   hidden: bool,
   #[serde(rename = "tabColor")]
@@ -280,7 +280,7 @@ impl GridRange {
           flag = false;
         }
         index => {
-          result = format!("{}{}", result, alpha_map[index].clone());
+          result = format!("{}{}", result, alpha_map[index - 1].clone());
           remainder %= 26;
         }
       }
@@ -311,18 +311,43 @@ pub enum MajorDimension {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Value {
+  Null,
+  Number(f64),
+  StringValue(String),
+  Bool(bool),
+  Struct(HashMap<String, Value>),
+  List(Vec<Value>),
+}
+
+impl IntoIterator for Value {
+  type Item = Value;
+  type IntoIter = std::vec::IntoIter<Self::Item>;
+
+  fn into_iter(self) -> Self::IntoIter {
+    match self {
+      Value::List(values) => values.clone().into_iter(),
+      _ => panic!("Tried to convert a non-list sheets_db::Value into an iterator"),
+    }
+  }
+}
+
+// This is a difference from the docs for the sheets API. Everything comes back as a string, so we cannot
+// guess the data type of the values.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValueRange {
-  range: String,
+  pub range: String,
   #[serde(rename = "majorDimension")]
-  major_dimension: MajorDimension,
-  values: Vec<Vec<String>>,
+  pub major_dimension: MajorDimension,
+  pub values: Vec<Vec<String>>,
 }
 
 impl WrapiResult for ValueRange {
   fn parse(_headers: Vec<(String, String)>, body: Vec<u8>) -> Result<Box<ValueRange>, WrapiError> {
     let contents = std::str::from_utf8(&body)?;
-    debug!("body:\n{:#?}", contents);
-    Ok(Box::new(serde_json::from_str(contents)?))
+    log::debug!("Value Range contents:\n{:#?}", contents);
+    let result = serde_json::from_str(contents)?;
+    Ok(Box::new(result))
   }
 }
 
@@ -685,14 +710,20 @@ pub struct ReadRequest {
 
 impl WrapiRequest for ReadRequest {
   fn build_uri(&self, base_url: &str) -> Result<String, WrapiError> {
-    let uri = format!(
-      "{}{}/values/{}",
-      base_url,
-      self.spreadsheet_id,
-      self.range.to_range(self.sheet_name.clone())
+    let uri = url::Url::parse_with_params(
+      &format!(
+        "{}{}/values/{}",
+        base_url,
+        self.spreadsheet_id,
+        self.range.to_range(self.sheet_name.clone())
+      )[..],
+      &[("dateTimeRenderOption", "SERIAL_NUMBER")],
     )
+    .unwrap()
+    .into_string()
     .parse()
     .unwrap();
+
     Ok(uri)
   }
 
@@ -757,29 +788,23 @@ impl SheetDB {
 
   // list sheets
   pub fn list_sheets(&self) -> Result<Vec<String>, WrapiError> {
-    debug!("\n---->   Listing SHeets");
     let list = self
       .sheet
       .sheets
       .iter()
       .map(|item| item.properties.title.clone())
       .collect();
-    debug!("List:\n{:#?}", list);
     Ok(list)
   }
 
-  /// column headers. This should likely be in Subpar, since this suggests a specific format
+  // pub fn get_range(&self, range: GridRange)
+
+  /// column headers. This should likely be in Subpar, since this suggests a specific format for the worksheet
   pub fn get_headers(&self, sheet_name: String) -> Result<Vec<String>, WrapiError> {
     debug!("Reading headers the sheet_name:\n{:#?}", sheet_name);
     let data = self.sheet.sheets.iter().find_map(|sheet| {
       match sheet.properties.title.clone() == sheet_name {
         true => {
-          debug!("properties:\n{:#?}", sheet.properties);
-          debug!("grid_properties:\n{:#?}", sheet.properties.grid_properties);
-          debug!(
-            "column_count:\n{:#?}",
-            sheet.properties.grid_properties.column_count
-          );
           let req = ReadRequest {
             spreadsheet_id: self.sheet.spreadsheet_id.clone(),
             sheet_name: sheet_name.clone(),
@@ -800,13 +825,52 @@ impl SheetDB {
     });
     debug!("Read Header data:\n{:#?}", data);
     match data {
-      Some(Ok(x)) => Ok(x.values[0].clone()),
+      Some(Ok(x)) => Ok(match x {
+        _ => Err(WrapiError::General(
+          "Data Conversion of {} does not make sense when getting data from Sheets".to_string(),
+        ))?,
+      }),
       Some(Err(err)) => Err(err),
       None => Err(WrapiError::General(format!(
         "Could not find a sheet named '{}' to get_headers from",
         sheet_name
       ))),
     }
+  }
+
+  pub fn get_sheet_properties(&self, sheet_name: String) -> Result<SheetProperties, WrapiError> {
+    debug!("Reading headers the sheet_name:\n{:#?}", sheet_name);
+    let data = self.sheet.sheets.iter().find_map(|sheet| {
+      match sheet.properties.title.clone() == sheet_name {
+        true => Some(sheet.properties.clone()),
+        false => None,
+      }
+    });
+    match data {
+      Some(x) => Ok(x),
+      None => Err(WrapiError::General(format!(
+        "Sheet named '{}' not found",
+        sheet_name
+      ))),
+    }
+  }
+
+  pub fn get_sheet(&self, sheet_name: String) -> Result<Box<ValueRange>, WrapiError> {
+    let props = self.get_sheet_properties(sheet_name.clone())?;
+    let req = ReadRequest {
+      spreadsheet_id: self.sheet.spreadsheet_id.clone(),
+      sheet_name: sheet_name.clone(),
+      range: GridRange {
+        sheet_id: props.sheet_id,
+        start_row_index: 1,
+        start_column_index: 1,
+        end_row_index: 2,
+        // end_row_index: props.grid_properties.row_count,
+        end_column_index: props.grid_properties.column_count,
+      },
+    };
+
+    self.api.borrow_mut().call("read", req)
   }
 
   // get row
