@@ -301,6 +301,72 @@ impl GridRange {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ValueInputOption {
+  #[serde(rename = "INPUT_VALUE_OPTION_UNSPECIFIED")]
+  InputValueOptionUnspecified,
+  #[serde(rename = "RAW")]
+  Raw,
+  #[serde(rename = "USER_ENTERED")]
+  UserEnetered,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum InsertDataOption {
+  #[serde(rename = "OVERWRITE")]
+  Overwrite,
+  #[serde(rename = "INSERT_ROWS")]
+  InsertRows,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ValueRenderOption {
+  #[serde(rename = "FORMATTED_VALUE")]
+  FormattedValue,
+  #[serde(rename = "UNFORMATTED_VALUE")]
+  UnformattedValue,
+  #[serde(rename = "FORMULA")]
+  Formula,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum DateTimeRenderOption {
+  #[serde(rename = "SERIAL_NUMBER")]
+  SerialNumber,
+  #[serde(rename = "FORMATTED_STRING")]
+  FormattedString,
+}
+
+// TOOD: Implement these functions
+#[derive(Debug)]
+pub struct StandardParameters {
+  fields: Option<String>,
+  uploadType: Option<String>,
+  xgafv: Option<i32>,
+  callback: Option<String>,
+  alt: Option<String>,
+  access_token: Option<String>,
+  upload_protocol: Option<String>,
+  prettyPrint: bool,
+  quotaUser: Option<String>,
+}
+
+impl StandardParameters {
+  pub fn default() -> StandardParameters {
+    StandardParameters {
+      fields: None,
+      uploadType: None,
+      xgafv: None,
+      callback: None,
+      alt: None,
+      access_token: None,
+      upload_protocol: None,
+      prettyPrint: true,
+      quotaUser: None,
+    }
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MajorDimension {
   #[serde(rename = "DIMENSION_UNSPECIFIED")]
   DimensionUnspecified,
@@ -336,9 +402,9 @@ impl IntoIterator for Value {
 // guess the data type of the values.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValueRange {
-  pub range: String,
+  pub range: Option<String>,
   #[serde(rename = "majorDimension")]
-  pub major_dimension: MajorDimension,
+  pub major_dimension: Option<MajorDimension>,
   pub values: Vec<Vec<String>>,
 }
 
@@ -736,6 +802,166 @@ impl WrapiRequest for ReadRequest {
   }
 }
 
+#[derive(Debug)]
+pub struct AppendRequest {
+  spreadsheet_id: String,
+  value_input: ValueInputOption,
+  insert_data: InsertDataOption,
+  include_values_in_response: bool,
+  response_value_render: ValueRenderOption,
+  response_datetime_render: DateTimeRenderOption,
+  standard_parameters: StandardParameters,
+  // This is the location of the table to append to
+  values: ValueRange,
+}
+
+impl AppendRequest {
+  /// Create a new Insert Request with default values
+  pub fn append_request(spreadsheet_id: String, values: ValueRange) -> AppendRequest {
+    AppendRequest {
+      spreadsheet_id,
+      value_input: ValueInputOption::Raw,
+      insert_data: InsertDataOption::InsertRows,
+      include_values_in_response: true,
+      response_value_render: ValueRenderOption::UnformattedValue,
+      response_datetime_render: DateTimeRenderOption::FormattedString,
+      standard_parameters: StandardParameters::default(),
+      values: values.clone(),
+    }
+  }
+}
+
+impl WrapiRequest for AppendRequest {
+  fn build_uri(&self, base_url: &str) -> Result<String, WrapiError> {
+    let path = format!(
+      "{}{}/values/{}:append",
+      base_url,
+      self.spreadsheet_id,
+      self.values.clone().range.unwrap_or("A1".to_string())
+    );
+
+    let params = [
+      (
+        "valueInputOption",
+        serde_json::to_string(&self.value_input).unwrap(),
+      ),
+      (
+        "insertDataOption",
+        serde_json::to_string(&self.insert_data).unwrap(),
+      ),
+      (
+        "includeValuesInResponse",
+        serde_json::to_string(&self.include_values_in_response).unwrap(),
+      ),
+      (
+        "responseValueRenderOption",
+        serde_json::to_string(&self.response_value_render).unwrap(),
+      ),
+      (
+        "responseDateTimeRender",
+        serde_json::to_string(&self.response_datetime_render).unwrap(),
+      ),
+    ];
+
+    let uri = url::Url::parse_with_params(&path[..], &params)
+      .unwrap()
+      .into_string()
+      .parse()
+      .unwrap();
+
+    Ok(uri)
+  }
+
+  fn build_body(&self) -> Result<String, WrapiError> {
+    Ok(serde_json::to_string(&self.values)?)
+  }
+
+  fn build_headers(&self) -> Result<Vec<(String, String)>, WrapiError> {
+    Ok(vec![])
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateValuesResponse {
+  #[serde(rename = "spreadsheetId")]
+  spreadsheet_id: String,
+  #[serde(rename = "updatedRange")]
+  updated_range: String,
+  #[serde(rename = "updatedRows")]
+  updated_rows: i32,
+  #[serde(rename = "updatedColumns")]
+  updated_columns: i32,
+  #[serde(rename = "updatedCells")]
+  updated_cells: i32,
+  #[serde(rename = "updatedData")]
+  updated_data: ValueRange,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AppendResponse {
+  spreadsheet_id: String,
+  table_range: String,
+  updates: Vec<UpdateValuesResponse>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum DeveloperMetadataLocationType {
+  // Default value.
+  #[serde(rename = "DEVELOPER_METADATA_LOCATION_TYPE_UNSPECIFIED")]
+  DeveloperMetadataLocationTypeUnspecified,
+  // Developer metadata associated on an entire row dimension.
+  #[serde(rename = "ROW")]
+  Row,
+  //	Developer metadata associated on an entire column dimension.
+  #[serde(rename = "COLUMN")]
+  Column,
+  //	Developer metadata associated on an entire sheet.
+  #[serde(rename = "SHEET")]
+  Sheet,
+  // Developer metadata associated on the entire spreadsheet.
+  #[serde(rename = "SPREADSHEET")]
+  Spreadsheet,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeveloperMetadataLocation {}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum DeveloperMetadataMatchingStrategy {}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum DeveloperMetadataVisibility {}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeveloperMetadataLookup {
+  location_type: DeveloperMetadataLocationType,
+  metadata_location: DeveloperMetadataLocation,
+  location_matching_strategy: DeveloperMetadataMatchingStrategy,
+  metadata_id: i32,
+  metadata_key: String,
+  metadata_value: String,
+  visibility: DeveloperMetadataVisibility,
+}
+
+pub struct DataFilter {
+  developer_metadata_lookup: DeveloperMetadataLookup,
+  a1_range: String,
+  grid_range: GridRange,
+}
+
+pub struct DataFilterValueRange {
+  filter: DataFilter,
+  major_dimension: MajorDimension,
+  // Should be a string
+  values: Vec<String>,
+}
+
+pub struct BatchUpdateByDataFilterRequest {
+  spreadsheet_id: String,
+  data: Vec<DataFilterValueRange>,
+  value_input: ValueInputOption,
+  include_values_in_response: bool,
+  response_value_render: ValueRenderOption,
+  response_datetime_render: DateTimeRenderOption,
+}
+
 pub struct SheetDB {
   api: RefCell<wrapi::API>,
   sheet: Box<Spreadsheet>,
@@ -864,8 +1090,8 @@ impl SheetDB {
         sheet_id: props.sheet_id,
         start_row_index: 1,
         start_column_index: 1,
-        end_row_index: 2,
-        // end_row_index: props.grid_properties.row_count,
+        // end_row_index: 2,
+        end_row_index: props.grid_properties.row_count,
         end_column_index: props.grid_properties.column_count,
       },
     };
@@ -873,6 +1099,9 @@ impl SheetDB {
     self.api.borrow_mut().call("read", req)
   }
 
+  pub fn append_range(&self, values: ValueRange) -> Result<AppendResponse, WrapiError> {
+    unimplemented!()
+  }
   // get row
 
   // update cell
