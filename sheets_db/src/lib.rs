@@ -226,7 +226,7 @@ pub enum SheetType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SheetProperties {
   #[serde(rename = "sheetId")]
-  sheet_id: i64,
+  pub sheet_id: i64,
   title: String,
   index: i32,
   #[serde(rename = "sheetType")]
@@ -249,17 +249,17 @@ pub struct GridData {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GridRange {
   #[serde(rename = "sheetId")]
-  sheet_id: i64,
+  pub sheet_id: i64,
   /// The is my own addition. Hopefully it won't break things
   // sheet_name: Option<String>,
   #[serde(rename = "startRowIndex")]
-  start_row_index: i32,
+  pub start_row_index: i32,
   #[serde(rename = "endRowIndex")]
-  end_row_index: i32,
+  pub end_row_index: i32,
   #[serde(rename = "startColumnIndex")]
-  start_column_index: i32,
+  pub start_column_index: i32,
   #[serde(rename = "endColumnIndex")]
-  end_column_index: i32,
+  pub end_column_index: i32,
 }
 
 impl GridRange {
@@ -585,7 +585,7 @@ pub enum ConditionValue {
 pub struct BooleanCondition {
   #[serde(rename = "type")]
   condition_type: ConditionType,
-  values: Vec<ConditionValue>,
+  values: Option<Vec<ConditionValue>>,
 }
 
 // TODO: This is a bug. The visibles must be the only set condition
@@ -650,12 +650,12 @@ pub enum Dimension {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DimensionRange {
   #[serde(rename = "sheetId")]
-  sheet_id: i64,
-  dimension: Dimension,
+  pub sheet_id: i64,
+  pub dimension: Dimension,
   #[serde(rename = "startIndex")]
-  start_index: i32,
+  pub start_index: i32,
   #[serde(rename = "endIndex")]
-  end_index: i32,
+  pub end_index: i32,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DimensionGroup {
@@ -708,7 +708,14 @@ pub struct NamedRange {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeveloperMetadata {
-  developer_metadata_not_implemented: String,
+  #[serde(rename = "metadataId")]
+  pub id: Option<i64>,
+  #[serde(rename = "metadataKey")]
+  pub key: String,
+  #[serde(rename = "metadataValue")]
+  pub value: String,
+  pub location: DeveloperMetadataLocation,
+  pub visibility: DeveloperMetadataVisibility,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -727,7 +734,6 @@ pub struct Spreadsheet {
 
 impl WrapiResult for Spreadsheet {
   fn parse(_headers: Vec<(String, String)>, body: Vec<u8>) -> Result<Box<Spreadsheet>, WrapiError> {
-    // println!("Serde Result:\n{:#?}", std::str::from_utf8(&b ody));
     debug!("Parsing the spreadsheet result");
     let str_body = std::str::from_utf8(&body)?;
     let result: Result<Spreadsheet, serde_json::error::Error> = serde_json::from_str(str_body);
@@ -735,8 +741,9 @@ impl WrapiResult for Spreadsheet {
       Ok(res) => Ok(Box::new(res)),
       Err(err) => {
         error!("Received an error parsing the GoogleSheet.read response");
-        info!("Result: {:#?}", err);
-        // debug!("Body: {:#?}", err);
+        println!("Result: {:#?}", err);
+        println!("The Body:\n{:#?}", std::str::from_utf8(&body));
+        // debug!("Body: {:#?}", err);p3
         Err(err)?
       }
     }
@@ -908,7 +915,7 @@ pub struct AppendResponse {
 pub enum DeveloperMetadataLocationType {
   // Default value.
   #[serde(rename = "DEVELOPER_METADATA_LOCATION_TYPE_UNSPECIFIED")]
-  DeveloperMetadataLocationTypeUnspecified,
+  Unspecified,
   // Developer metadata associated on an entire row dimension.
   #[serde(rename = "ROW")]
   Row,
@@ -922,30 +929,78 @@ pub enum DeveloperMetadataLocationType {
   #[serde(rename = "SPREADSHEET")]
   Spreadsheet,
 }
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DeveloperMetadataLocation {}
+pub enum DeveloperMetadataLocationValue {
+  #[serde(rename = "spreadsheet")]
+  Spreadsheet(bool),
+  #[serde(rename = "sheetId")]
+  SheetId(i64),
+  #[serde(rename = "dimensionRange")]
+  Range(DimensionRange),
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum DeveloperMetadataMatchingStrategy {}
+pub struct DeveloperMetadataLocation {
+  #[serde(rename = "locationType")]
+  pub location_type: DeveloperMetadataLocationType,
+  #[serde(flatten)]
+  pub value: DeveloperMetadataLocationValue,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum DeveloperMetadataVisibility {}
+pub enum DeveloperMetadataMatchingStrategy {
+  #[serde(rename = "DEVELOPER_METADATA_LOCATION_MATCHING_STRATEGY_UNSPECIFIED")]
+  Unspecified,
+  #[serde(rename = "EXACT_LOCATION")]
+  Exact,
+  #[serde(rename = "INTERSECTING_LOCATION")]
+  Intersecting,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum DeveloperMetadataVisibility {
+  #[serde(rename = "DEVELOPER_METADATA_VISIBILITY_UNSPECIFIED")]
+  Unspecified,
+  #[serde(rename = "DOCUMENT")]
+  Document,
+  #[serde(rename = "PROJECT")]
+  Project,
+}
+
+fn is_none<T>(opt: &Option<T>) -> bool {
+  opt.is_none()
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeveloperMetadataLookup {
-  location_type: DeveloperMetadataLocationType,
-  metadata_location: DeveloperMetadataLocation,
-  location_matching_strategy: DeveloperMetadataMatchingStrategy,
-  metadata_id: i32,
-  metadata_key: String,
-  metadata_value: String,
-  visibility: DeveloperMetadataVisibility,
+  #[serde(rename = "metadataLocation")]
+  pub metadata_location: DeveloperMetadataLocation,
+  #[serde(rename = "locationMatchingStrategy")]
+  pub location_matching_strategy: DeveloperMetadataMatchingStrategy,
+  #[serde(rename = "metadataID", skip_serializing_if = "is_none")]
+  pub metadata_id: Option<i32>,
+  #[serde(rename = "locationType", skip_serializing_if = "is_none")]
+  pub location_type: Option<DeveloperMetadataLocationType>,
+  #[serde(rename = "metadataKey", skip_serializing_if = "is_none")]
+  pub metadata_key: Option<String>,
+  #[serde(rename = "metadataValue", skip_serializing_if = "is_none")]
+  pub metadata_value: Option<String>,
+  #[serde(skip_serializing_if = "is_none")]
+  pub visibility: Option<DeveloperMetadataVisibility>,
 }
 
-pub struct DataFilter {
-  developer_metadata_lookup: DeveloperMetadataLookup,
-  a1_range: String,
-  grid_range: GridRange,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum DataFilter {
+  #[serde(rename = "developerMetadataLookup")]
+  Lookup(DeveloperMetadataLookup),
+  #[serde(rename = "a1Range")]
+  A1Range(String),
+  #[serde(rename = "gridRange")]
+  Range(GridRange),
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DataFilterValueRange {
   filter: DataFilter,
   major_dimension: MajorDimension,
@@ -953,13 +1008,139 @@ pub struct DataFilterValueRange {
   values: Vec<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BatchUpdateByDataFilterRequest {
+  #[serde(skip)]
   spreadsheet_id: String,
   data: Vec<DataFilterValueRange>,
   value_input: ValueInputOption,
   include_values_in_response: bool,
   response_value_render: ValueRenderOption,
   response_datetime_render: DateTimeRenderOption,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateDeveloperMetadataRequest {
+  #[serde(rename = "developerMetadata")]
+  pub developer_metadata: DeveloperMetadata,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateDeveloperMetadataRequest {
+  #[serde(rename = "dataFilters")]
+  pub data_filters: Vec<DataFilter>,
+  #[serde(rename = "developerMetadata")]
+  pub developer_metadata: DeveloperMetadata,
+  pub fields: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeleteDeveloperMetadataRequest {
+  #[serde(rename = "dataFilters")]
+  pub data_filters: Vec<DataFilter>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeveloperMetadataSearchRequest {
+  #[serde(skip)]
+  pub sheet_id: String,
+  #[serde(rename = "dataFilters")]
+  pub filters: Vec<DataFilter>,
+}
+
+impl WrapiRequest for DeveloperMetadataSearchRequest {
+  fn build_uri(&self, base_url: &str) -> Result<String, WrapiError> {
+    let uri = format!(
+      "{}{}/developerMetadata:search",
+      base_url,
+      self.sheet_id.clone()
+    )
+    .parse()
+    .unwrap();
+    Ok(uri)
+  }
+
+  fn build_body(&self) -> Result<String, WrapiError> {
+    Ok(serde_json::to_string(&self)?)
+  }
+
+  fn build_headers(&self) -> Result<Vec<(String, String)>, WrapiError> {
+    Ok(vec![])
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MatchedDeveloperMetadata {
+  #[serde(rename = "developerMetadata")]
+  pub developer_metadata: DeveloperMetadata,
+  #[serde(rename = "dataFilters")]
+  pub filters: Vec<DataFilter>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MetadataSearchResult {
+  #[serde(rename = "matchedDeveloperMetadata")]
+  pub matches: Option<Vec<MatchedDeveloperMetadata>>,
+}
+
+impl WrapiResult for MetadataSearchResult {
+  fn parse(
+    _headers: Vec<(String, String)>,
+    body: Vec<u8>,
+  ) -> Result<Box<MetadataSearchResult>, WrapiError> {
+    debug!("Parsing the spreadsheet result");
+    let str_body = std::str::from_utf8(&body)?;
+    let result: Result<MetadataSearchResult, serde_json::error::Error> =
+      serde_json::from_str(str_body);
+    match result {
+      Ok(res) => Ok(Box::new(res)),
+      Err(err) => {
+        error!("Received an error parsing the GoogleSheet Metadata Search Response");
+        println!("Result: {:#?}", err);
+        println!("The Body:\n{:#?}", std::str::from_utf8(&body));
+        // debug!("Body: {:#?}", err);
+        Err(err)?
+      }
+    }
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BatchUpdateRequestItem {
+  CreateDeveloperMetadata(CreateDeveloperMetadataRequest),
+  UpdateDeveloperMetadata(UpdateDeveloperMetadataRequest),
+  DeleteDeveloperMetadata(DeleteDeveloperMetadataRequest),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BatchUpdateRequest {
+  #[serde(skip)]
+  sheet_id: String,
+  requests: Vec<BatchUpdateRequestItem>,
+  #[serde(rename = "includeSpreadsheetInResponse")]
+  include_spreadsheet_in_response: bool,
+  #[serde(rename = "responseRanges")]
+  response_ranges: Vec<String>,
+  #[serde(rename = "responseIncludeGridData")]
+  response_include_grid_data: bool,
+}
+
+impl WrapiRequest for BatchUpdateRequest {
+  fn build_uri(&self, base_url: &str) -> Result<String, WrapiError> {
+    let uri = format!("{}{}:batchUpdate", base_url, self.sheet_id.clone())
+      .parse()
+      .unwrap();
+    Ok(uri)
+  }
+
+  fn build_body(&self) -> Result<String, WrapiError> {
+    Ok(serde_json::to_string(&self)?)
+  }
+
+  fn build_headers(&self) -> Result<Vec<(String, String)>, WrapiError> {
+    Ok(vec![])
+  }
 }
 
 pub struct SheetDB {
@@ -976,7 +1157,7 @@ impl SheetDB {
 
   /// Connect to an existing spreadsheet
   pub fn open(auth: wrapi::AuthMethod, sheet_id: String) -> Result<SheetDB, WrapiError> {
-    info!("Opening spreadsheet with ID: {}", sheet_id.clone());
+    println!("Opening spreadsheet with ID: {}", sheet_id.clone());
     let api = wrapi::API::new(auth.clone())
       .add_endpoint(
         "open".to_string(),
@@ -999,15 +1180,26 @@ impl SheetDB {
           request_mime_type: wrapi::MimeType::Json,
           response_mime_type: wrapi::MimeType::Json,
         },
+      )
+      .add_endpoint(
+        "search".to_string(),
+        wrapi::Endpoint {
+          base_url: "https://sheets.googleapis.com/v4/spreadsheets/",
+          auth_method: auth.clone(),
+          request_method: wrapi::RequestMethod::POST,
+          scopes: vec!["https://www.googleapis.com/auth/drive"],
+          request_mime_type: wrapi::MimeType::Json,
+          response_mime_type: wrapi::MimeType::Json,
+        },
       );
 
     let req = OpenRequest { sheet_id: sheet_id };
-    debug!("About to query the sheet");
-    let sheet = api.call("open", req);
+    log::debug!("About to query the sheet using the 'open' call");
+    let sheet = api.call("open", req)?;
 
     Ok(SheetDB {
       api: RefCell::new(api),
-      sheet: sheet.unwrap(),
+      sheet: sheet,
       settings: Settings { auto_write: false },
     })
   }
@@ -1099,6 +1291,18 @@ impl SheetDB {
     self.api.borrow_mut().call("read", req)
   }
 
+  pub fn search_metadata(
+    &self,
+    filters: Vec<DataFilter>,
+  ) -> Result<Box<MetadataSearchResult>, WrapiError> {
+    self.api.borrow_mut().call(
+      "search",
+      DeveloperMetadataSearchRequest {
+        sheet_id: self.sheet.spreadsheet_id.clone(),
+        filters,
+      },
+    )
+  }
   pub fn append_range(&self, values: ValueRange) -> Result<AppendResponse, WrapiError> {
     unimplemented!()
   }
