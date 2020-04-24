@@ -1,6 +1,8 @@
 /// Functional interactios with Google Sheets (V4)
-use log::{debug, error, info};
+use log::{debug, error};
+use std::borrow::Borrow;
 use std::cell::RefCell;
+
 use std::collections::HashMap;
 
 use serde_derive::{Deserialize, Serialize};
@@ -595,8 +597,10 @@ pub struct FilterCriteria {
   #[serde(default, rename = "hiddenValues")]
   hidden_values: Vec<String>,
   condition: Option<BooleanCondition>,
-  visibleBackgroundColor: Option<Color>,
-  visibleForegroundColor: Option<Color>,
+  #[serde(rename = "visibleBackgroundColor")]
+  background_color: Option<Color>,
+  #[serde(rename = "visibleForegroundColor")]
+  foreground_color: Option<Color>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -725,7 +729,7 @@ pub struct Spreadsheet {
   // properties: SpreadsheetProperties,
   sheets: Vec<Sheet>,
   #[serde(rename = "namedRanges")]
-  named_ranges: Vec<NamedRange>,
+  named_ranges: Option<Vec<NamedRange>>,
   #[serde(rename = "spreadsheetUrl")]
   spreadsheet_url: String,
   #[serde(rename = "developerMetadata", default)]
@@ -751,7 +755,7 @@ impl WrapiResult for Spreadsheet {
 }
 
 pub struct Settings {
-  auto_write: bool,
+  _auto_write: bool,
 }
 
 pub struct OpenRequest {
@@ -942,8 +946,8 @@ pub enum DeveloperMetadataLocationValue {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeveloperMetadataLocation {
-  #[serde(rename = "locationType")]
-  pub location_type: DeveloperMetadataLocationType,
+  #[serde(rename = "locationType", skip_serializing_if = "is_none")]
+  pub location_type: Option<DeveloperMetadataLocationType>,
   #[serde(flatten)]
   pub value: DeveloperMetadataLocationValue,
 }
@@ -978,8 +982,8 @@ pub struct DeveloperMetadataLookup {
   pub metadata_location: DeveloperMetadataLocation,
   #[serde(rename = "locationMatchingStrategy")]
   pub location_matching_strategy: DeveloperMetadataMatchingStrategy,
-  #[serde(rename = "metadataID", skip_serializing_if = "is_none")]
-  pub metadata_id: Option<i32>,
+  #[serde(rename = "metadataId", skip_serializing_if = "is_none")]
+  pub metadata_id: Option<i64>,
   #[serde(rename = "locationType", skip_serializing_if = "is_none")]
   pub location_type: Option<DeveloperMetadataLocationType>,
   #[serde(rename = "metadataKey", skip_serializing_if = "is_none")]
@@ -1036,8 +1040,14 @@ pub struct UpdateDeveloperMetadataRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeleteDeveloperMetadataRequest {
-  #[serde(rename = "dataFilters")]
-  pub data_filters: Vec<DataFilter>,
+  #[serde(rename = "dataFilter")]
+  pub filter: DataFilter,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeleteDeveloperMetadataResponse {
+  #[serde(rename = "deletedDeveloperMetadata")]
+  pub deleted: Vec<DeveloperMetadata>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1106,24 +1116,45 @@ impl WrapiResult for MetadataSearchResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
 pub enum BatchUpdateRequestItem {
+  #[serde(rename = "createDeveloperMetadata")]
   CreateDeveloperMetadata(CreateDeveloperMetadataRequest),
+  #[serde(rename = "updateDeveloperMetadata")]
   UpdateDeveloperMetadata(UpdateDeveloperMetadataRequest),
+  #[serde(rename = "deleteDeveloperMetadata")]
   DeleteDeveloperMetadata(DeleteDeveloperMetadataRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum BatchUpdateResponseItem {
+  #[serde(rename = "createDeveloperMetadata")]
+  CreateDeveloperMetadata(DeveloperMetadata),
+  #[serde(rename = "updateDeveloperMetadata")]
+  UpdateDeveloperMetadata(DeveloperMetadata),
+  #[serde(rename = "deleteDeveloperMetadata")]
+  DeleteDeveloperMetadata(DeleteDeveloperMetadataResponse),
+}
+
+/// Spreadsheet level updates (usually metadata)
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BatchUpdateRequest {
   #[serde(skip)]
-  sheet_id: String,
-  requests: Vec<BatchUpdateRequestItem>,
+  pub sheet_id: String,
+  pub requests: Vec<BatchUpdateRequestItem>,
   #[serde(rename = "includeSpreadsheetInResponse")]
-  include_spreadsheet_in_response: bool,
+  pub include_spreadsheet_in_response: bool,
   #[serde(rename = "responseRanges")]
-  response_ranges: Vec<String>,
+  pub response_ranges: Vec<String>,
   #[serde(rename = "responseIncludeGridData")]
-  response_include_grid_data: bool,
+  pub response_include_grid_data: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BatchUpdateResponse {
+  #[serde(rename = "spreadsheetId")]
+  sheet_id: String,
+  // replies: Vec<BatchUpdateResponseItem>
+  // spreadsheet: Option<Spreadsheet>
 }
 
 impl WrapiRequest for BatchUpdateRequest {
@@ -1143,10 +1174,22 @@ impl WrapiRequest for BatchUpdateRequest {
   }
 }
 
+impl WrapiResult for BatchUpdateResponse {
+  fn parse(
+    _headers: Vec<(String, String)>,
+    body: Vec<u8>,
+  ) -> Result<Box<BatchUpdateResponse>, WrapiError> {
+    let contents = std::str::from_utf8(&body)?;
+    println!("Result Body:\n{:#?}", contents);
+    let result = serde_json::from_str(contents)?;
+    Ok(Box::new(result))
+  }
+}
+
 pub struct SheetDB {
   api: RefCell<wrapi::API>,
   sheet: Box<Spreadsheet>,
-  settings: Settings,
+  _settings: Settings,
 }
 
 /// Access a google sheet and keep an API connection open for modifying it
@@ -1191,6 +1234,17 @@ impl SheetDB {
           request_mime_type: wrapi::MimeType::Json,
           response_mime_type: wrapi::MimeType::Json,
         },
+      )
+      .add_endpoint(
+        "batch_update".to_string(),
+        wrapi::Endpoint {
+          base_url: "https://sheets.googleapis.com/v4/spreadsheets/",
+          auth_method: auth.clone(),
+          request_method: wrapi::RequestMethod::POST,
+          scopes: vec!["https://www.googleapis.com/auth/drive"],
+          request_mime_type: wrapi::MimeType::Json,
+          response_mime_type: wrapi::MimeType::Json,
+        },
       );
 
     let req = OpenRequest { sheet_id: sheet_id };
@@ -1200,7 +1254,7 @@ impl SheetDB {
     Ok(SheetDB {
       api: RefCell::new(api),
       sheet: sheet,
-      settings: Settings { auto_write: false },
+      _settings: Settings { _auto_write: false },
     })
   }
 
@@ -1303,10 +1357,19 @@ impl SheetDB {
       },
     )
   }
-  pub fn append_range(&self, values: ValueRange) -> Result<AppendResponse, WrapiError> {
-    unimplemented!()
-  }
-  // get row
 
-  // update cell
+  pub fn batch_update(
+    &self,
+    requests: Vec<BatchUpdateRequestItem>,
+  ) -> Result<Box<BatchUpdateResponse>, WrapiError> {
+    let sheet: &Spreadsheet = self.sheet.borrow();
+    let req = BatchUpdateRequest {
+      sheet_id: sheet.spreadsheet_id.clone(),
+      requests,
+      include_spreadsheet_in_response: false,
+      response_ranges: vec![],
+      response_include_grid_data: false,
+    };
+    self.api.borrow_mut().call("batch_update", req)
+  }
 }
