@@ -106,30 +106,30 @@ pub struct Padding {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HorizontalAlign {
-  Horizontalalign_not_implemented,
+  HorizontalalignNotImplemented,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum VertialAlign {
-  VERTIALALIGN_NOT_IMPLEMENTED,
+  VERTIALALIGNNOTIMPLEMENTED,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WrapStrategy {
   #[serde(rename = "")]
-  WRAPSTRATEGY_NOT_IMPLEMENTED,
+  WrapStrategyNotImplemented,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TextDirection {
-  #[serde(rename = "")]
-  TEXTDIRECTION_NOT_IMPLEMENTED,
+  #[serde(rename = "TEXTDIRECTION_NOT_IMPLEMENTED")]
+  TEXTDIRECTIONNOTIMPLEMENTED,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HyperlinkDisplayType {
-  #[serde(rename = "")]
-  HYPERLINKDISPLAYTYPE_NOT_IMPLEMENTED,
+  #[serde(rename = "HYPERLINKDISPLAYTYPE_NOT_IMPLEMENTED")]
+  HYPERLINKDISPLAYTYPENOTIMPLEMENTED,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -339,31 +339,34 @@ pub enum DateTimeRenderOption {
 }
 
 // TOOD: Implement these functions
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StandardParameters {
   fields: Option<String>,
-  uploadType: Option<String>,
+  #[serde(rename = "uploadType")]
+  upload_type: Option<String>,
   xgafv: Option<i32>,
   callback: Option<String>,
   alt: Option<String>,
   access_token: Option<String>,
   upload_protocol: Option<String>,
-  prettyPrint: bool,
-  quotaUser: Option<String>,
+  #[serde(rename = "prettyPrint")]
+  pretty_print: bool,
+  #[serde(rename = "quotaUser")]
+  quota_user: Option<String>,
 }
 
 impl StandardParameters {
   pub fn default() -> StandardParameters {
     StandardParameters {
       fields: None,
-      uploadType: None,
+      upload_type: None,
       xgafv: None,
       callback: None,
       alt: None,
       access_token: None,
       upload_protocol: None,
-      prettyPrint: true,
-      quotaUser: None,
+      pretty_print: true,
+      quota_user: None,
     }
   }
 }
@@ -828,7 +831,7 @@ pub struct AppendRequest {
 
 impl AppendRequest {
   /// Create a new Insert Request with default values
-  pub fn append_request(spreadsheet_id: String, values: ValueRange) -> AppendRequest {
+  pub fn new(spreadsheet_id: String, values: ValueRange) -> AppendRequest {
     AppendRequest {
       spreadsheet_id,
       value_input: ValueInputOption::Raw,
@@ -848,17 +851,26 @@ impl WrapiRequest for AppendRequest {
       "{}{}/values/{}:append",
       base_url,
       self.spreadsheet_id,
-      self.values.clone().range.unwrap_or("A1".to_string())
+      self
+        .values
+        .clone()
+        .range
+        .unwrap_or("A1".to_string())
+        .replace(":", "%3A")
     );
 
     let params = [
       (
         "valueInputOption",
-        serde_json::to_string(&self.value_input).unwrap(),
+        serde_json::to_string(&self.value_input)
+          .unwrap()
+          .replace("\"", ""),
       ),
       (
         "insertDataOption",
-        serde_json::to_string(&self.insert_data).unwrap(),
+        serde_json::to_string(&self.insert_data)
+          .unwrap()
+          .replace("\"", ""),
       ),
       (
         "includeValuesInResponse",
@@ -866,11 +878,15 @@ impl WrapiRequest for AppendRequest {
       ),
       (
         "responseValueRenderOption",
-        serde_json::to_string(&self.response_value_render).unwrap(),
+        serde_json::to_string(&self.response_value_render)
+          .unwrap()
+          .replace("\"", ""),
       ),
       (
-        "responseDateTimeRender",
-        serde_json::to_string(&self.response_datetime_render).unwrap(),
+        "responseDateTimeRenderOption",
+        serde_json::to_string(&self.response_datetime_render)
+          .unwrap()
+          .replace("\"", ""),
       ),
     ];
 
@@ -910,9 +926,23 @@ pub struct UpdateValuesResponse {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AppendResponse {
+  #[serde(rename = "spreadsheetId")]
   spreadsheet_id: String,
+  #[serde(rename = "tableRange")]
   table_range: String,
-  updates: Vec<UpdateValuesResponse>,
+  updates: UpdateValuesResponse,
+}
+
+impl WrapiResult for AppendResponse {
+  fn parse(
+    _headers: Vec<(String, String)>,
+    body: Vec<u8>,
+  ) -> Result<Box<AppendResponse>, WrapiError> {
+    let contents = std::str::from_utf8(&body)?;
+    log::debug!("AppendResponse:\n{:#?}", contents);
+    let result = serde_json::from_str(contents)?;
+    Ok(Box::new(result))
+  }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1200,7 +1230,7 @@ impl SheetDB {
 
   /// Connect to an existing spreadsheet
   pub fn open(auth: wrapi::AuthMethod, sheet_id: String) -> Result<SheetDB, WrapiError> {
-    println!("Opening spreadsheet with ID: {}", sheet_id.clone());
+    log::info!("Opening spreadsheet with ID: {}", sheet_id.clone());
     let api = wrapi::API::new(auth.clone())
       .add_endpoint(
         "open".to_string(),
@@ -1370,6 +1400,12 @@ impl SheetDB {
       response_ranges: vec![],
       response_include_grid_data: false,
     };
+    self.api.borrow_mut().call("batch_update", req)
+  }
+
+  pub fn append_values(&self, values: ValueRange) -> Result<Box<AppendResponse>, WrapiError> {
+    let sheet: &Spreadsheet = self.sheet.borrow();
+    let req = AppendRequest::new(sheet.spreadsheet_id.clone(), values);
     self.api.borrow_mut().call("batch_update", req)
   }
 }
