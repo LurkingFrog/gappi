@@ -216,6 +216,14 @@ pub struct GridProperties {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GridCoordinate {
+  sheet_id: i64,
+  row_index: i64,
+  column_index: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SheetType {
   #[serde(rename = "SHEET_TYPE_UNSPECIFIED")]
   Unspecified,
@@ -671,9 +679,67 @@ pub struct DimensionGroup {
   #[serde(default = "bool_false")]
   collapsed: bool,
 }
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Slicer {
-  slicer_not_implemented: String,
+  #[serde(rename = "slicerId")]
+  slicer_id: i64,
+  spec: SlicerSpec,
+  position: EmbeddedObjectPosition,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlicerSpec {
+  data_range: GridRange,
+  filter_criteria: Option<FilterCriteria>,
+  column_index: Option<i64>,
+  apply_to_pivot_tables: bool,
+  title: Option<String>,
+  text_format: Option<TextFormat>,
+  background_color: Option<Color>,
+  background_color_styre: Option<ColorStyle>,
+  horizontal_alignment: Option<HorizontalAlign>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColorStyle {
+  rgb_color: Color,
+  theme_color: ThemeColorType,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ThemeColorType {
+  ThemeColoTypeUnpsecified,
+  Text,
+  Background,
+  Accent1,
+  Accent2,
+  Accent3,
+  Accent4,
+  Accent5,
+  Accent6,
+  Link,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EmbeddedObjectPosition {
+  SheetId(i64),
+  OverlayPosition(OverlayPosition),
+  NewSheet(bool),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayPosition {
+  anchor_cell: GridCoordinate,
+  offset_x_pixels: i64,
+  offset_y_pixels: i64,
+  width_pixels: i64,
+  height_pixels: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
