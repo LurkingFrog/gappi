@@ -75,7 +75,13 @@ pub enum NumberFormatType {
   Scientific,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+impl Default for NumberFormatType {
+  fn default() -> NumberFormatType {
+    NumberFormatType::Unspecified
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct NumberFormat {
   #[serde(rename = "type")]
   format_type: NumberFormatType,
@@ -98,9 +104,9 @@ pub struct Borders {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Padding {
-  top: i16,
+  top: Option<i16>,
   right: i16,
-  bottom: i16,
+  bottom: Option<i16>,
   left: i16,
 }
 
@@ -147,33 +153,27 @@ pub struct TextRotation {
   textrotation_not_implemented: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
 pub struct CellFormat {
-  #[serde(rename = "numberFormat")]
   number_format: NumberFormat,
-  #[serde(rename = "backgroundColor")]
-  background_color: Color,
-  borders: Borders,
-  padding: Padding,
-  #[serde(rename = "horizontalAlignment")]
-  horizontal_alignment: HorizontalAlign,
-  #[serde(rename = "verticalAlignment")]
-  vertical_alignment: VerticalAlign,
-  #[serde(rename = "wrapStrategy")]
-  wrap_strategy: WrapStrategy,
-  #[serde(rename = "textDirection")]
-  text_direction: TextDirection,
-  #[serde(rename = "textFormat")]
-  text_format: TextFormat,
-  #[serde(rename = "hyperlinkDisplayType")]
-  hyperlink_display_type: HyperlinkDisplayType,
-  #[serde(rename = "textRotation")]
-  text_rotation: TextRotation,
+  background_color: Option<Color>,
+  borders: Option<Borders>,
+  padding: Option<Padding>,
+  horizontal_alignment: Option<HorizontalAlign>,
+  vertical_alignment: Option<VerticalAlign>,
+  wrap_strategy: Option<WrapStrategy>,
+  text_direction: Option<TextDirection>,
+  text_format: Option<TextFormat>,
+  hyperlink_display_type: Option<HyperlinkDisplayType>,
+  text_rotation: Option<TextRotation>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IterativeCalculationSettings {
-  iterativecalculationsettings_not_implemented: String,
+  max_iterations: i32,
+  convergence_threshold: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -181,20 +181,19 @@ pub struct SpreadsheetTheme {
   spreadsheettheme_not_implemented: String,
 }
 
+// TODO: Need to put the CellFormat and Theme in to create sheets
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SpreadsheetProperties {
-  title: String,
-  locale: String,
-  #[serde(rename = "autoRecalc")]
-  auto_recalc: RecalculationInterval,
-  #[serde(rename = "timeZone")]
-  timezone: String,
-  #[serde(rename = "defaultFormat")]
-  default_format: CellFormat,
-  #[serde(rename = "iterativeCalculationSettings")]
-  iterative_calculation_settings: IterativeCalculationSettings,
-  #[serde(rename = "spreadsheetTheme")]
-  spreadsheet_theme: SpreadsheetTheme,
+  pub title: String,
+  pub locale: String,
+  pub auto_recalc: RecalculationInterval,
+  pub timezone: Option<String>,
+  // #[serde(rename = "defaultFormat")]
+  // pub default_format: CellFormat,
+  pub iterative_calculation_settings: Option<IterativeCalculationSettings>,
+  // #[serde(rename = "spreadsheetTheme")]
+  // pub spreadsheet_theme: SpreadsheetTheme,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -411,6 +410,7 @@ impl IntoIterator for Value {
   }
 }
 
+//---
 // This is a difference from the docs for the sheets API. Everything comes back as a string, so we cannot
 // guess the data type of the values.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -429,10 +429,45 @@ impl WrapiResult for ValueRange {
     Ok(Box::new(result))
   }
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConditionalFormatRule {
+  ranges: Vec<GridRange>,
+  boolean_rule: Option<BooleanRule>,
+  gradient_rule: Option<GradientRule>,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ConditionalFormatRule {
-  conditionalformatrule_not_implemented: String,
+pub struct BooleanRule {
+  condition: BooleanCondition,
+  format: CellFormat,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GradientRule {
+  minpoint: InterpolationPoint,
+  midpoint: InterpolationPoint,
+  maxpoint: InterpolationPoint,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InterpolationPoint {
+  color: Color,
+  style: ColorStyle,
+  #[serde(rename = "type")]
+  point_type: InterpolationPointType,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum InterpolationPointType {
+  #[serde(rename = "INTERPOLATION_POINT_TYPE_UNSPECIFIED")]
+  Unspecified,
+  Min,
+  Max,
+  Number,
+  Percent,
+  Percentile,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -794,15 +829,15 @@ pub struct DeveloperMetadata {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Spreadsheet {
   #[serde(rename = "spreadsheetId")]
-  spreadsheet_id: String,
-  // properties: SpreadsheetProperties,
-  sheets: Vec<Sheet>,
+  pub spreadsheet_id: String,
+  pub properties: SpreadsheetProperties,
+  pub sheets: Vec<Sheet>,
   #[serde(rename = "namedRanges")]
-  named_ranges: Option<Vec<NamedRange>>,
+  pub named_ranges: Option<Vec<NamedRange>>,
   #[serde(rename = "spreadsheetUrl")]
-  spreadsheet_url: String,
+  pub spreadsheet_url: String,
   #[serde(rename = "developerMetadata", default)]
-  developer_metadata: Vec<DeveloperMetadata>,
+  pub developer_metadata: Vec<DeveloperMetadata>,
 }
 
 impl WrapiResult for Spreadsheet {
@@ -856,21 +891,33 @@ pub struct ReadRequest {
 
 impl WrapiRequest for ReadRequest {
   fn build_uri(&self, base_url: &str) -> Result<String, WrapiError> {
-    let uri = url::Url::parse_with_params(
-      &format!(
-        "{}{}/values/{}",
-        base_url,
-        self.spreadsheet_id,
-        self.range.to_range(self.sheet_name.clone())
-      )[..],
-      &[("dateTimeRenderOption", "SERIAL_NUMBER")],
-    )
-    .unwrap()
-    .into_string()
-    .parse()
-    .unwrap();
+    // let uri = url::Url::parse_with_params(
+    //   &format!(
+    //     "{}{}/values/{}",
+    //     base_url,
+    //     self.spreadsheet_id,
+    //     self.range.to_range(self.sheet_name.clone())
+    //   )[..],
+    //   &[("dateTimeRenderOption", "SERIAL_NUMBER")],
+    // )
+    // .unwrap()
+    // .into_string()
+    // .parse()
+    // .unwrap();
 
-    Ok(uri)
+    // Ok(uri)
+    Ok(
+      url::Url::parse_with_params(
+        &format!(
+          "{}{}/values/{}",
+          base_url,
+          self.spreadsheet_id,
+          self.range.to_range(self.sheet_name.clone())
+        )[..],
+        &[("dateTimeRenderOption", "SERIAL_NUMBER")],
+      )?
+      .into(),
+    )
   }
 
   fn build_body(&self) -> Result<String, WrapiError> {
@@ -956,13 +1003,7 @@ impl WrapiRequest for AppendRequest {
       ),
     ];
 
-    let uri = url::Url::parse_with_params(&path[..], &params)
-      .unwrap()
-      .into_string()
-      .parse()
-      .unwrap();
-
-    Ok(uri)
+    Ok(url::Url::parse_with_params(&path[..], &params)?.into())
   }
 
   fn build_body(&self) -> Result<String, WrapiError> {
@@ -1284,7 +1325,7 @@ impl WrapiResult for BatchUpdateResponse {
 
 pub struct SheetDB {
   api: RefCell<wrapi::API>,
-  sheet: Box<Spreadsheet>,
+  pub sheet: Box<Spreadsheet>,
   _settings: Settings,
 }
 
